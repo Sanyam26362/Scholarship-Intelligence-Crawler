@@ -1,0 +1,120 @@
+# ==============================================================================
+# Atlas Scholarship Intelligence Engine - Seed Sources Configuration
+# ==============================================================================
+# Registered authoritative seed sources for scholarship intelligence discovery.
+# Aggregators are strictly excluded from seed lists; only canonical portals are seeded.
+
+version: "1.0"
+description: "Authoritative seed sources for Indian student scholarships"
+
+categories:
+  central_government:
+    name: "Central Government"
+    authority_level: "HIGH"
+    domain_score: 30
+    sources:
+      - id: "nsp_national_portal"
+        name: "National Scholarship Portal (NSP)"
+        authority_name: "Ministry of Electronics & Information Technology, Government of India"
+        domain: "scholarships.gov.in"
+        canonical_url: "https://scholarships.gov.in"
+        source_type: "GOVERNMENT"
+        description: "One-stop digital platform for Central, State, and Apex body scholarships across India"
+        discovery_patterns:
+          - "site:scholarships.gov.in scholarship scheme guidelines"
+          - "site:scholarships.gov.in pre-matric post-matric merit-cum-means"
+          - "site:scholarships.gov.in central sector scheme college university students"
+        target_schemes:
+          - "Central Sector Scheme of Scholarships for College and University Students"
+          - "Post Matric Scholarship Schemes Minorities"
+          - "Top Class Education Scheme for SC Students"
+          - "National Means Cum Merit Scholarship"
+
+  apex_bodies:
+    name: "Apex Bodies & Statutory Councils"
+    authority_level: "HIGH"
+    domain_score: 28
+    sources:
+      - id: "aicte_india"
+        name: "All India Council for Technical Education (AICTE)"
+        authority_name: "Ministry of Education, Government of India"
+        domain: "aicte-india.org"
+        canonical_url: "https://www.aicte-india.org"
+        source_type: "APEX_BODY"
+        description: "Statutory apex council for technical and engineering education in India"
+        discovery_patterns:
+          - "site:aicte-india.org scholarship schemes pragati saksham swanath"
+          - "site:aicte-india.org fellowships pg scholarship gate gpat"
+        target_schemes:
+          - "AICTE Pragati Scholarship for Girls (Degree & Diploma)"
+          - "AICTE Saksham Scholarship for Specially-Abled Students"
+          - "AICTE Swanath Scholarship Scheme"
+          - "AICTE PG Scholarship for GATE/GPAT Qualified Students"
+
+      - id: "ugc_india"
+        name: "University Grants Commission (UGC)"
+        authority_name: "Ministry of Education, Government of India"
+        domain: "ugc.ac.in"
+        canonical_url: "https://www.ugc.ac.in"
+        source_type: "APEX_BODY"
+        description: "Apex regulatory body for higher education in India"
+        discovery_patterns:
+          - "site:ugc.ac.in scholarships fellowships higher education"
+          - "site:ugc.ac.in ishan uday single girl child pg scholarship"
+        target_schemes:
+          - "Ishan Uday Special Scholarship Scheme for North Eastern Region (NER)"
+          - "Post Graduate Indira Gandhi Scholarship for Single Girl Child"
+          - "Post Graduate Merit Scholarship for University Rank Holders"
+
+  corporate_csr:
+    name: "Corporate Social Responsibility (CSR)"
+    authority_level: "HIGH"
+    domain_score: 25
+    sources:
+      - id: "reliance_foundation"
+        name: "Reliance Foundation"
+        authority_name: "Reliance Industries Limited"
+        domain: "reliancefoundation.org"
+        canonical_url: "https://www.reliancefoundation.org"
+        source_type: "CORPORATE_CSR"
+        description: "CSR scholarship initiative supporting undergraduate and postgraduate students"
+        discovery_patterns:
+          - "site:reliancefoundation.org scholarships undergraduate postgraduate"
+          - "Reliance Foundation Undergraduate Scholarships application guidelines"
+        target_schemes:
+          - "Reliance Foundation Undergraduate Scholarships"
+          - "Reliance Foundation Postgraduate Scholarships"
+
+      - id: "aditya_birla_capital"
+        name: "Aditya Birla Capital Foundation"
+        authority_name: "Aditya Birla Capital / Aditya Birla Group"
+        domain: "adityabirlacapital.com"
+        canonical_url: "https://www.adityabirlacapital.com"
+        source_type: "CORPORATE_CSR"
+        description: "Corporate CSR educational assistance for underprivileged students across India"
+        discovery_patterns:
+          - "site:adityabirlacapital.com scholarship covid crisis education"
+          - "Aditya Birla Capital Scholarship scheme eligibility guidelines"
+        target_schemes:
+          - "Aditya Birla Capital COVID Scholarship"
+          - "Aditya Birla Scholarship Programme"
+
+  foundations_trusts:
+    name: "Foundations & Philanthropic Trusts"
+    authority_level: "HIGH"
+    domain_score: 25
+    sources:
+      - id: "tata_trusts"
+        name: "Tata Trusts"
+        authority_name: "Sir Ratan Tata Trust & Allied Trusts"
+        domain: "tatatrusts.org"
+        canonical_url: "https://www.tatatrusts.org"
+        source_type: "NGO_TRUST"
+        description: "Philanthropic trust providing merit-cum-means grants and higher education scholarships"
+        discovery_patterns:
+          - "site:tatatrusts.org education scholarships grants individual"
+          - "site:tatatrusts.org travel grants civil aviation medical education"
+        target_schemes:
+          - "Tata Trusts Means Grant for School and College"
+          - "Tata Trusts Medical and Healthcare Studies Scholarship"
+          - "J.N. Tata Endowment for Higher Education of Indians"

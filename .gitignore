@@ -1,0 +1,21 @@
+# Environment & Keys
+.env
+*.env
+
+# Python & Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# AI Generated Verification Reports (excluded per instructions)
+*VERIFICATION_REPORT*.md
+
+# Logs & Cache
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+.playwright/
