@@ -205,23 +205,42 @@ with st.sidebar:
 
     st.divider()
     st.subheader("🔍 Filters & Search")
+
+    if "status_filter" not in st.session_state:
+        st.session_state["status_filter"] = "ALL"
+    if "source_type_filter" not in st.session_state:
+        st.session_state["source_type_filter"] = "ALL"
+    if "min_confidence" not in st.session_state:
+        st.session_state["min_confidence"] = 0
+    if "search_query" not in st.session_state:
+        st.session_state["search_query"] = ""
+
+    def _reset_filters() -> None:
+        st.session_state["status_filter"] = "ALL"
+        st.session_state["source_type_filter"] = "ALL"
+        st.session_state["min_confidence"] = 0
+        st.session_state["search_query"] = ""
+
     status_filter = st.selectbox(
         "Verification Status",
         options=["ALL", "VERIFIED", "REVIEW_REQUIRED", "EXPIRED", "EXPIRING_SOON"],
-        index=0,
+        key="status_filter",
     )
     source_type_filter = st.selectbox(
         "Source Category",
         options=["ALL", "GOVERNMENT", "APEX_BODY", "CORPORATE_CSR", "NGO_TRUST"],
-        index=0,
+        key="source_type_filter",
     )
     min_confidence = st.slider(
         "Minimum Confidence Score (%)",
         min_value=0,
         max_value=100,
-        value=0,
         step=5,
+        key="min_confidence",
     )
+    st.button("↺ Reset All Filters", on_click=_reset_filters, use_container_width=True)
+
+    filter_status_placeholder = st.empty()
 
     st.divider()
     st.caption(f"Database: `{settings.db_path.name}`")
@@ -295,6 +314,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 search_query = st.text_input(
     "🔎 Search Opportunities (by Scheme Name, Disbursing Provider, Eligibility, or Domicile):",
     placeholder="e.g., Pragati, Reliance, Minority, Engineering, Assam, SC/ST...",
+    key="search_query",
 )
 
 if search_query.strip():
@@ -307,10 +327,28 @@ if search_query.strip():
         | filtered_df["amount_benefit"].fillna("").str.lower().str.contains(q, regex=False)
     ]
 
+filters_active = (
+    status_filter != "ALL"
+    or source_type_filter != "ALL"
+    or min_confidence > 0
+    or bool(search_query.strip())
+)
+filter_status_placeholder.caption(
+    f"Matching **{len(filtered_df)} / {len(df)}** schemes"
+    + (" (filters active)" if filters_active else "")
+)
+
 tab_inventory, tab_audit, tab_analytics = st.tabs(["📋 Scholarship Inventory", "📜 Change Audit Trail", "📊 Fleet Analytics"])
 
 with tab_inventory:
-    st.markdown(f"**Displaying {len(filtered_df)} opportunities:**")
+    st.markdown(f"**Displaying {len(filtered_df)} of {len(df)} opportunities:**")
+
+    if filtered_df.empty:
+        st.info(
+            "No scholarships match the current filter criteria. "
+            "Note: Corporate CSR / NGO Trust domains have a max deterministic score of **95%** (25/30 domain authority). "
+            "Click **'↺ Reset All Filters'** in the sidebar to view all opportunities."
+        )
 
     # Present table view
     display_cols = ["id", "name", "provider", "source_type", "amount_benefit", "closing_date", "confidence_score", "status"]
@@ -444,7 +482,9 @@ with tab_inventory:
             scheme_logs = get_audit_logs(scholarship_id=selected_id)
             if scheme_logs:
                 st.markdown("#### ⏱️ Scheme Change History (Audit Log)")
-                st.dataframe(pd.DataFrame(scheme_logs)[["field_name", "old_value", "new_value", "evidence_quote", "detected_at"]], use_container_width=True, hide_index=True)
+                scheme_logs_df = pd.DataFrame(scheme_logs)
+                scheme_logs_df["evidence_quote"] = scheme_logs_df["evidence_quote"].fillna("").replace("", "Automated lifecycle / score verification")
+                st.dataframe(scheme_logs_df[["field_name", "old_value", "new_value", "evidence_quote", "detected_at"]], use_container_width=True, hide_index=True)
 
 
 with tab_audit:
@@ -453,34 +493,53 @@ with tab_audit:
 
     if all_audit_logs:
         audit_df = pd.DataFrame(all_audit_logs)
-        st.dataframe(
-            audit_df[["scholarship_id", "field_name", "old_value", "new_value", "evidence_quote", "detected_at"]].rename(columns={
-                "scholarship_id": "Scholarship ID",
-                "field_name": "Field Modified",
-                "old_value": "Previous Value",
-                "new_value": "Updated Value",
-                "evidence_quote": "Verbatim Verification Quote",
-                "detected_at": "Timestamp Detected",
-            }),
-            use_container_width=True,
-            hide_index=True,
-        )
+        audit_df["evidence_quote"] = audit_df["evidence_quote"].fillna("").replace("", "Automated lifecycle / score verification")
+
+        if filters_active:
+            matching_ids = set(filtered_df["id"].tolist())
+            audit_df = audit_df[audit_df["scholarship_id"].isin(matching_ids)]
+            st.caption(f"Showing **{len(audit_df)}** of **{len(all_audit_logs)}** audit logs matching your active sidebar filters.")
+        else:
+            st.caption(f"Showing all **{len(audit_df)}** audit logs.")
+
+        if not audit_df.empty:
+            st.dataframe(
+                audit_df[["scholarship_id", "field_name", "old_value", "new_value", "evidence_quote", "detected_at"]].rename(columns={
+                    "scholarship_id": "Scholarship ID",
+                    "field_name": "Field Modified",
+                    "old_value": "Previous Value",
+                    "new_value": "Updated Value",
+                    "evidence_quote": "Verbatim Verification Quote",
+                    "detected_at": "Timestamp Detected",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("No audit logs match the current sidebar filters. Click **'↺ Reset All Filters'** in the sidebar to see all system-wide changes.")
     else:
-        st.info("No changes logged yet. Click **'Run 2: Delta'** in the sidebar to run the change detection pass.")
+        st.info("No changes logged yet. Click **'🔄 Run 2: Delta Audit'** in the sidebar to run the change detection pass.")
 
 
 with tab_analytics:
     st.markdown("### 📊 Fleet Diversity & Verification Distribution")
-    col_c1, col_c2 = st.columns(2)
+    analytics_df = filtered_df if filters_active else df
+    if filters_active:
+        st.caption(f"Analytics filtered to **{len(analytics_df)} / {len(df)}** matching schemes.")
 
-    with col_c1:
-        st.markdown("**Opportunities by Source Type:**")
-        type_counts = df["source_type"].value_counts().reset_index()
-        type_counts.columns = ["Source Type", "Count"]
-        st.bar_chart(type_counts.set_index("Source Type"))
+    if analytics_df.empty:
+        st.info("No scholarships match the current sidebar filters. Click **'↺ Reset All Filters'** in the sidebar to view fleet charts.")
+    else:
+        col_c1, col_c2 = st.columns(2)
 
-    with col_c2:
-        st.markdown("**Opportunities by Verification Status:**")
-        status_counts = df["status"].value_counts().reset_index()
-        status_counts.columns = ["Status", "Count"]
-        st.bar_chart(status_counts.set_index("Status"))
+        with col_c1:
+            st.markdown("**Opportunities by Source Type:**")
+            type_counts = analytics_df["source_type"].value_counts().reset_index()
+            type_counts.columns = ["Source Type", "Count"]
+            st.bar_chart(type_counts.set_index("Source Type"))
+
+        with col_c2:
+            st.markdown("**Opportunities by Verification Status:**")
+            status_counts = analytics_df["status"].value_counts().reset_index()
+            status_counts.columns = ["Status", "Count"]
+            st.bar_chart(status_counts.set_index("Status"))

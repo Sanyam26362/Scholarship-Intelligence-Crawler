@@ -562,11 +562,20 @@ class ScholarshipLifecycleRunner:
             record.provider = profile["provider"]
             record.source_type = profile["source_type"]
             record.official_source_url = profile["official_source_url"]
-            record.application_url = profile.get("application_url", record.application_url)
-            record.closing_date = profile.get("closing_date", record.closing_date)
-            record.amount_benefit = profile.get("amount_benefit", record.amount_benefit)
-            record.eligibility_criteria = profile.get("eligibility_criteria", record.eligibility_criteria)
-            record.income_criteria = profile.get("income_criteria", record.income_criteria)
+            for opt_field in (
+                "application_url",
+                "closing_date",
+                "amount_benefit",
+                "eligibility_criteria",
+                "income_criteria",
+                "academic_requirements",
+                "course_level",
+                "domicile_requirements",
+                "gender_criteria",
+                "category_criteria",
+            ):
+                if profile.get(opt_field):
+                    setattr(record, opt_field, profile[opt_field])
 
             # Ensure evidence map has ground-truth quote from text
             if "eligibility_criteria" not in record.evidence_map or not record.evidence_map["eligibility_criteria"].quote:
