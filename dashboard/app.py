@@ -10,6 +10,7 @@ import inspect
 import json
 import os
 import sys
+import types
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
@@ -28,19 +29,23 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import config.settings as _settings_mod
-import core.crawler.html_crawler as _crawler_mod
-import core.extractor.llm_client as _llm_mod
-import core.extractor.parser as _parser_mod
 import core.lifecycle.runner as _runner_mod
 
 # Handle Streamlit Cloud hot-reload where app.py reloads but cached backend modules stay stale
 if "progress_callback" not in inspect.signature(_runner_mod.run_discovery_and_crawl).parameters:
-    importlib.reload(_settings_mod)
-    importlib.reload(_crawler_mod)
-    importlib.reload(_llm_mod)
-    importlib.reload(_parser_mod)
-    importlib.reload(_runner_mod)
+    for _mod_name in (
+        "config.settings",
+        "core.crawler.html_crawler",
+        "core.extractor.llm_client",
+        "core.extractor.parser",
+        "core.lifecycle.runner",
+    ):
+        _mod = sys.modules.get(_mod_name)
+        if isinstance(_mod, types.ModuleType):
+            try:
+                importlib.reload(_mod)
+            except Exception:
+                pass
 
 from config.settings import settings
 from storage.database import (
