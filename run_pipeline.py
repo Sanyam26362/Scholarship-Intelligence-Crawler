@@ -127,8 +127,14 @@ def generate_markdown_report(
     # Build audit log table rows
     audit_table_rows = []
     for log in audit_logs:
+        sid = str(log.get("scholarship_id") or "")[:16]
+        fname = str(log.get("field_name") or "")
+        old_v = str(log.get("old_value") or "")[:40]
+        new_v = str(log.get("new_value") or "")[:40]
+        ev_q = str(log.get("evidence_quote") or "")[:50]
+        det_at = str(log.get("detected_at") or "")[:19]
         audit_table_rows.append(
-            f"| `{log['scholarship_id'][:16]}...` | **{log['field_name']}** | `{log['old_value'][:40]}...` | `{log['new_value'][:40]}...` | \"{log.get('evidence_quote', '')[:50]}...\" | `{log['detected_at'][:19]}` |"
+            f"| `{sid}...` | **{fname}** | `{old_v}...` | `{new_v}...` | \"{ev_q}...\" | `{det_at}` |"
         )
     audit_table_md = "\n".join(audit_table_rows) if audit_table_rows else "| None | None | None | None | None | None |"
 

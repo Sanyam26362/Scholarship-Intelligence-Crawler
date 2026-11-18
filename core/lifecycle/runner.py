@@ -6,10 +6,12 @@ Executes autonomous multi-cycle scholarship intelligence pipelines:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from dateutil import parser as date_parser
 
 from config.settings import settings
@@ -482,7 +484,11 @@ class ScholarshipLifecycleRunner:
 
         return base_status
 
-    def run_discovery_and_crawl(self, target_count: int = 22) -> Dict[str, Any]:
+    def run_discovery_and_crawl(
+        self,
+        target_count: int = 22,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    ) -> Dict[str, Any]:
         """
         RUN 1: Ingests authentic scholarship profiles into the database, executes grounded
         extraction, calculates 100-point deterministic scores, and saves records with evidence.
@@ -495,22 +501,52 @@ class ScholarshipLifecycleRunner:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         profiles_to_process = REAL_SCHOLARSHIP_PROFILES[:target_count]
+        total_profiles = len(profiles_to_process)
 
-        for profile in profiles_to_process:
+        # Pre-fetch live HTML pages concurrently (fast HTTPX pass, no Playwright hang in cloud/batch)
+        crawled_texts: Dict[str, str] = {}
+        html_urls = [
+            p["official_source_url"]
+            for p in profiles_to_process
+            if not p["official_source_url"].lower().endswith(".pdf")
+        ]
+
+        def _fetch_one(target_url: str) -> Tuple[str, Optional[str]]:
+            try:
+                res = fetch_html(
+                    target_url,
+                    allow_playwright=False,
+                    polite_delay=False,
+                    timeout=3.0,
+                )
+                if res.status_code == 200 and len(res.clean_text) >= 200:
+                    return target_url, res.clean_text
+            except Exception as exc:
+                logger.info("Using authoritative portal guidelines text for %s: %s", target_url, exc)
+            return target_url, None
+
+        if html_urls:
+            with ThreadPoolExecutor(max_workers=min(6, len(html_urls))) as executor:
+                futures = [executor.submit(_fetch_one, u) for u in html_urls]
+                for fut in as_completed(futures):
+                    u, txt = fut.result()
+                    if txt:
+                        crawled_texts[u] = txt
+
+        for idx, profile in enumerate(profiles_to_process, start=1):
             url = profile["official_source_url"]
             source_type = profile["source_type"]
             title = profile["name"]
             auth_text = profile["authentic_text"]
 
-            # 1. Attempt live crawl if HTML
-            clean_text = auth_text
-            if not url.lower().endswith(".pdf"):
+            if progress_callback:
                 try:
-                    crawl_res = fetch_html(url)
-                    if crawl_res.status_code == 200 and len(crawl_res.clean_text) >= 200:
-                        clean_text = crawl_res.clean_text
-                except Exception as e:
-                    logger.info("Using authoritative portal guidelines text for %s: %s", title, e)
+                    progress_callback(idx, total_profiles, title)
+                except Exception:
+                    pass
+
+            # 1. Use live crawled text if available, else authoritative portal guidelines text
+            clean_text = crawled_texts.get(url, auth_text)
 
             # 2. Grounded Extraction
             record, evidence_map = extract_scholarship_data(
@@ -562,6 +598,7 @@ class ScholarshipLifecycleRunner:
             record.confidence_score = score
             record.status = lifecycle_status
             record.score_breakdown = breakdown
+            record.raw_hash = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
             record.last_verified = now_iso
 
             # 5. Persist to SQLite
@@ -656,10 +693,17 @@ class ScholarshipLifecycleRunner:
         return summary
 
 
-def run_discovery_and_crawl(target_count: int = 22, db_path: Optional[str] = None) -> Dict[str, Any]:
+def run_discovery_and_crawl(
+    target_count: int = 22,
+    db_path: Optional[str] = None,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+) -> Dict[str, Any]:
     """Functional wrapper to execute Run 1."""
     runner = ScholarshipLifecycleRunner(db_path=db_path)
-    return runner.run_discovery_and_crawl(target_count=target_count)
+    return runner.run_discovery_and_crawl(
+        target_count=target_count,
+        progress_callback=progress_callback,
+    )
 
 
 def run_cycle_delta_check(db_path: Optional[str] = None) -> Dict[str, Any]:

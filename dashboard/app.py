@@ -50,14 +50,14 @@ CUSTOM_CSS = """
     .main-title {
         font-size: 2.1rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #06b6d4 100%);
+        background: linear-gradient(135deg, #3b82f6 0%, #38bdf8 50%, #22d3ee 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-bottom: 0.2rem;
     }
 
     .subtitle {
-        color: #64748b;
+        color: #94a3b8;
         font-size: 1.0rem;
         margin-bottom: 1.5rem;
     }
@@ -152,20 +152,32 @@ with st.sidebar:
     st.divider()
 
     st.subheader("⚡ Continuous Pipeline Controls")
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("🚀 Run 1: Ingest", help="Run full discovery & crawl pipeline"):
-            with st.spinner("Executing Run 1 (Ingesting 22 authentic schemes)..."):
-                res1 = run_discovery_and_crawl(target_count=22)
-                st.success(f"Ingested {res1.get('total_ingested')} schemes!")
-                st.rerun()
+    if st.button("🚀 Run 1: Ingest 22 Schemes", use_container_width=True, help="Run full discovery & crawl pipeline"):
+        progress_bar = st.progress(0.0, text="Crawling official portals in parallel...")
+        try:
+            def _on_progress(current: int, total: int, scheme_name: str) -> None:
+                short_name = scheme_name if len(scheme_name) <= 28 else scheme_name[:25] + "..."
+                progress_bar.progress(
+                    min(1.0, current / max(1, total)),
+                    text=f"[{current}/{total}] {short_name}",
+                )
 
-    with col_btn2:
-        if st.button("🔄 Run 2: Delta", help="Execute change detection & stale lifecycle audit"):
-            with st.spinner("Executing Run 2 (Delta tracking & stale audit)..."):
+            res1 = run_discovery_and_crawl(target_count=22, progress_callback=_on_progress)
+            progress_bar.progress(1.0, text="Ingestion complete!")
+            st.success(f"Ingested {res1.get('total_ingested')} schemes!")
+            st.rerun()
+        except Exception as exc:
+            progress_bar.empty()
+            st.error(f"Run 1 encountered an error: {exc}")
+
+    if st.button("🔄 Run 2: Delta Audit", use_container_width=True, help="Execute change detection & stale lifecycle audit"):
+        with st.spinner("Executing Run 2 (Delta tracking & stale audit)..."):
+            try:
                 res2 = run_cycle_delta_check()
                 st.success(f"Audit Complete! {res2.get('deltas_detected')} deltas logged.")
                 st.rerun()
+            except Exception as exc:
+                st.error(f"Run 2 encountered an error: {exc}")
 
     st.divider()
     st.subheader("🔍 Filters & Search")
@@ -264,11 +276,11 @@ search_query = st.text_input(
 if search_query.strip():
     q = search_query.strip().lower()
     filtered_df = filtered_df[
-        filtered_df["name"].str.lower().str.contains(q)
-        | filtered_df["provider"].str.lower().str.contains(q)
-        | filtered_df["eligibility_criteria"].str.lower().str.contains(q)
-        | filtered_df["domicile_requirements"].str.lower().str.contains(q)
-        | filtered_df["amount_benefit"].str.lower().str.contains(q)
+        filtered_df["name"].fillna("").str.lower().str.contains(q, regex=False)
+        | filtered_df["provider"].fillna("").str.lower().str.contains(q, regex=False)
+        | filtered_df["eligibility_criteria"].fillna("").str.lower().str.contains(q, regex=False)
+        | filtered_df["domicile_requirements"].fillna("").str.lower().str.contains(q, regex=False)
+        | filtered_df["amount_benefit"].fillna("").str.lower().str.contains(q, regex=False)
     ]
 
 tab_inventory, tab_audit, tab_analytics = st.tabs(["📋 Scholarship Inventory", "📜 Change Audit Trail", "📊 Fleet Analytics"])

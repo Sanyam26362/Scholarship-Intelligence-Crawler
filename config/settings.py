@@ -21,13 +21,29 @@ else:
     load_dotenv(override=False)
 
 
+def _get_env_or_secret(key: str, default: Optional[str] = None) -> Optional[str]:
+    """Reads config from environment variables, falling back to Streamlit Cloud st.secrets if available."""
+    val = os.getenv(key)
+    if val is not None and str(val).strip() != "":
+        return str(val).strip()
+    try:
+        import streamlit as st
+        if key in st.secrets:
+            secret_val = st.secrets[key]
+            if secret_val is not None and str(secret_val).strip() != "":
+                return str(secret_val).strip()
+    except Exception:
+        pass
+    return default
+
+
 class Settings:
     """Central settings object loaded from environment variables and static configuration."""
 
     def __init__(self) -> None:
         # Paths
         self.base_dir: Path = BASE_DIR
-        raw_db_path = os.getenv("DB_PATH", "data/scholarships.db")
+        raw_db_path = _get_env_or_secret("DB_PATH", "data/scholarships.db") or "data/scholarships.db"
         self.db_path: Path = (
             Path(raw_db_path) if Path(raw_db_path).is_absolute() else BASE_DIR / raw_db_path
         )
@@ -38,12 +54,12 @@ class Settings:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         # Primary LLM Provider: Google Gemini
-        self.gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
-        self.gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        self.gemini_api_key: Optional[str] = _get_env_or_secret("GEMINI_API_KEY")
+        self.gemini_model: str = _get_env_or_secret("GEMINI_MODEL", "gemini-3.8-flash") or "gemini-3.8-flash"
 
         # Fallback LLM Provider: Local Ollama
-        self.ollama_model: str = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-        self.ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.ollama_model: str = _get_env_or_secret("OLLAMA_MODEL", "gemma3:4b") or "gemma3:4b"
+        self.ollama_base_url: str = _get_env_or_secret("OLLAMA_BASE_URL", "http://localhost:11434") or "http://localhost:11434"
 
         # Network & Scraping Limits
         self.ddgs_rate_limit_delay: float = float(os.getenv("DDGS_RATE_LIMIT_DELAY", "1.5"))

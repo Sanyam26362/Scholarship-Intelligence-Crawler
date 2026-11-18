@@ -5,6 +5,7 @@ Strips boilerplate and computes content hashes for deduplication and delta track
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import random
@@ -19,6 +20,36 @@ import httpx
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+_PLAYWRIGHT_AVAILABLE: Optional[bool] = None
+
+
+def _can_use_sync_playwright() -> bool:
+    """
+    Returns True only when sync Playwright can safely launch Chromium
+    (not inside a running asyncio loop like Streamlit Cloud, and browser binary installed).
+    """
+    global _PLAYWRIGHT_AVAILABLE
+    try:
+        asyncio.get_running_loop()
+        # sync_playwright raises/deadlocks inside an active asyncio event loop
+        return False
+    except RuntimeError:
+        pass
+
+    if _PLAYWRIGHT_AVAILABLE is not None:
+        return _PLAYWRIGHT_AVAILABLE
+
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            exe_path = p.chromium.executable_path
+            import os
+            _PLAYWRIGHT_AVAILABLE = bool(exe_path and os.path.exists(exe_path))
+    except Exception:
+        _PLAYWRIGHT_AVAILABLE = False
+
+    return _PLAYWRIGHT_AVAILABLE
 
 
 @dataclass
@@ -38,7 +69,7 @@ class HTMLCrawler:
     """Fetches web pages via HTTPX with Playwright fallback for SPA/JS pages."""
 
     def __init__(self, timeout: Optional[float] = None) -> None:
-        self.timeout = timeout if timeout is not None else 6.0
+        self.timeout = timeout if timeout is not None else 4.0
         self.headers = {
             "User-Agent": settings.user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -105,16 +136,25 @@ class HTMLCrawler:
             duration = time.time() - start
             return content, page.url, status, duration
 
-    def fetch(self, url: str, force_playwright: bool = False) -> CrawlResult:
+    def fetch(
+        self,
+        url: str,
+        force_playwright: bool = False,
+        allow_playwright: bool = True,
+        polite_delay: bool = True,
+    ) -> CrawlResult:
         """
         Executes resilient fetch with polite delay, HTML stripping,
         and content hashing.
         """
-        # Randomized polite delay between 0.8s and 1.5s
-        time.sleep(random.uniform(0.8, 1.5))
+        if polite_delay:
+            # Randomized polite delay between 0.3s and 0.8s
+            time.sleep(random.uniform(0.3, 0.8))
         start_time = time.time()
 
-        if force_playwright:
+        can_pw = allow_playwright and _can_use_sync_playwright()
+
+        if force_playwright and can_pw:
             try:
                 raw_html, final_url, status, duration = self._fetch_with_playwright(url)
                 clean_text, title = self._clean_html(raw_html)
@@ -144,9 +184,10 @@ class HTMLCrawler:
                 )
 
         # 1. Attempt fast static HTTPX request
+        http_timeout = httpx.Timeout(connect=2.5, read=self.timeout, write=2.5, pool=2.5)
         try:
             with httpx.Client(
-                timeout=self.timeout,
+                timeout=http_timeout,
                 follow_redirects=True,
                 headers=self.headers,
                 verify=False,
@@ -156,7 +197,7 @@ class HTMLCrawler:
 
                 if res.status_code == 200:
                     clean_text, title = self._clean_html(res.text)
-                    if len(clean_text) >= 200:
+                    if len(clean_text) >= 200 or not can_pw:
                         raw_hash = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
                         return CrawlResult(
                             url=url,
@@ -181,7 +222,20 @@ class HTMLCrawler:
                         error=f"HTTP {res.status_code}",
                     )
 
-            # If static returned thin content, fallback to Playwright only if requested or likely JS SPA
+            if not can_pw:
+                return CrawlResult(
+                    url=url,
+                    canonical_url=url,
+                    title="",
+                    clean_text="",
+                    raw_hash="",
+                    status_code=0,
+                    response_time=time.time() - start_time,
+                    used_playwright=False,
+                    error="Thin content and Playwright unavailable in current runtime",
+                )
+
+            # If static returned thin content, fallback to Playwright only when usable
             raw_html, final_url, status, duration = self._fetch_with_playwright(url)
             clean_text, title = self._clean_html(raw_html)
             raw_hash = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
@@ -197,6 +251,20 @@ class HTMLCrawler:
             )
 
         except Exception as exc:
+            if not can_pw:
+                logger.info("HTTPX fetch skipped/failed for %s (%s); Playwright disabled in cloud/batch mode.", url, exc)
+                return CrawlResult(
+                    url=url,
+                    canonical_url=url,
+                    title="",
+                    clean_text="",
+                    raw_hash="",
+                    status_code=0,
+                    response_time=time.time() - start_time,
+                    used_playwright=False,
+                    error=f"HTTPX: {exc}",
+                )
+
             logger.warning("HTTPX error for %s (%s). Falling back to Playwright...", url, exc)
             try:
                 raw_html, final_url, status, duration = self._fetch_with_playwright(url)
@@ -227,7 +295,18 @@ class HTMLCrawler:
                 )
 
 
-def fetch_html(url: str, force_playwright: bool = False) -> CrawlResult:
+def fetch_html(
+    url: str,
+    force_playwright: bool = False,
+    allow_playwright: bool = True,
+    polite_delay: bool = True,
+    timeout: Optional[float] = None,
+) -> CrawlResult:
     """Convenience helper to crawl an HTML page."""
-    crawler = HTMLCrawler()
-    return crawler.fetch(url, force_playwright=force_playwright)
+    crawler = HTMLCrawler(timeout=timeout)
+    return crawler.fetch(
+        url,
+        force_playwright=force_playwright,
+        allow_playwright=allow_playwright,
+        polite_delay=polite_delay,
+    )
