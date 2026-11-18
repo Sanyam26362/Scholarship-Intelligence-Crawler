@@ -5,6 +5,8 @@ verbatim source evidence traces, and automated delta change audit tracking.
 """
 from __future__ import annotations
 
+import importlib
+import inspect
 import json
 import os
 import sys
@@ -25,6 +27,20 @@ st.set_page_config(
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+import config.settings as _settings_mod
+import core.crawler.html_crawler as _crawler_mod
+import core.extractor.llm_client as _llm_mod
+import core.extractor.parser as _parser_mod
+import core.lifecycle.runner as _runner_mod
+
+# Handle Streamlit Cloud hot-reload where app.py reloads but cached backend modules stay stale
+if "progress_callback" not in inspect.signature(_runner_mod.run_discovery_and_crawl).parameters:
+    importlib.reload(_settings_mod)
+    importlib.reload(_crawler_mod)
+    importlib.reload(_llm_mod)
+    importlib.reload(_parser_mod)
+    importlib.reload(_runner_mod)
 
 from config.settings import settings
 from storage.database import (
@@ -162,7 +178,10 @@ with st.sidebar:
                     text=f"[{current}/{total}] {short_name}",
                 )
 
-            res1 = run_discovery_and_crawl(target_count=22, progress_callback=_on_progress)
+            if "progress_callback" in inspect.signature(run_discovery_and_crawl).parameters:
+                res1 = run_discovery_and_crawl(target_count=22, progress_callback=_on_progress)
+            else:
+                res1 = run_discovery_and_crawl(target_count=22)
             progress_bar.progress(1.0, text="Ingestion complete!")
             st.success(f"Ingested {res1.get('total_ingested')} schemes!")
             st.rerun()
